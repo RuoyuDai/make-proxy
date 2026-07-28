@@ -15,7 +15,9 @@
     code_change/3]).
 
 -record(state, {
-    key :: string(),
+    key :: binary(),
+    username :: binary(),
+    password :: binary(),
     ref :: ranch:ref(),
     socket :: any(),
     transport :: module(),
@@ -61,12 +63,15 @@ start_link(Ref, Socket, Transport, Opts) ->
 %%--------------------------------------------------------------------
 init([Ref, Socket, Transport, _Opts]) ->
     put(init, true),
-    {ok, Key} = application:get_env(make_proxy, key),
+    {ok, Password} = application:get_env(make_proxy, password),
+    {ok, Username} = application:get_env(make_proxy, username),
+    Key = mp_crypto:derive_key(Password),
     {OK, Closed, Error} = Transport:messages(),
 
     ok = Transport:setopts(Socket, [{active, once}, {packet, 4}]),
 
-    State = #state{key = Key, ref = Ref, socket = Socket,
+    State = #state{key = Key, username = list_to_binary(Username),
+        password = list_to_binary(Password), ref = Ref, socket = Socket,
         transport = Transport, ok = OK, closed = Closed,
         error = Error},
 
@@ -115,15 +120,25 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 
-%% first message from client
+%% first message from client: authentication + target
 handle_info({OK, Socket, Request},
     #state{key = Key, socket = Socket,
         transport = Transport, ok = OK, remote = undefined} = State) ->
 
-    case connect_to_remote(Request, Key) of
-        {ok, Remote} ->
-            ok = Transport:setopts(Socket, [{active, once}]),
-            {noreply, State#state{remote = Remote}, ?TIMEOUT};
+    case authenticate(Request, State) of
+        {ok, Address, Port} ->
+            case connect_target(Address, Port) of
+                {ok, Remote} ->
+                    ok = reply(Socket, Transport, Key, ok),
+                    ok = Transport:setopts(Socket, [{active, once}]),
+                    {noreply, State#state{remote = Remote}, ?TIMEOUT};
+                {error, Error} ->
+                    ok = reply(Socket, Transport, Key, {error, connect_failure}),
+                    {stop, Error, State}
+            end;
+        {error, auth_failure} ->
+            ok = reply(Socket, Transport, Key, {error, auth_failure}),
+            {stop, normal, State};
         {error, Error} ->
             {stop, Error, State}
     end;
@@ -220,19 +235,30 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
--spec connect_to_remote(binary(), nonempty_string()) ->
-    {ok, inet:socket()} | {error, term()}.
-connect_to_remote(Data, Key) ->
+-spec authenticate(binary(), #state{}) ->
+    {ok, inet:ip_address() | nonempty_string(), inet:port_number()} |
+    {error, term()}.
+authenticate(Data, #state{key = Key, username = Username, password = Password}) ->
     case mp_crypto:decrypt(Key, Data) of
         {ok, RealData} ->
-            {Address, Port} = binary_to_term(RealData),
-            connect_target(Address, Port);
+            case binary_to_term(RealData, [safe]) of
+                {auth, Username, Password, {Address, Port}} ->
+                    {ok, Address, Port};
+                {auth, _, _, _} ->
+                    {error, auth_failure};
+                _ ->
+                    {error, invalid_request}
+            end;
         {error, Error} ->
             {error, Error}
     end.
 
+-spec reply(any(), module(), binary(), term()) -> ok.
+reply(Socket, Transport, Key, Term) ->
+    Transport:send(Socket, mp_crypto:encrypt(Key, term_to_binary(Term))).
 
--spec connect_target(inet:ip_address(), inet:port_number()) ->
+
+-spec connect_target(inet:ip_address() | nonempty_string(), inet:port_number()) ->
     {ok, inet:socket()} | {error, term()}.
 connect_target(Address, Port) ->
     connect_target(Address, Port, 2).

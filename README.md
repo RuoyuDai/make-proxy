@@ -40,7 +40,11 @@ with the great erlang, the project has the following features:
     *   server_addr - which address that the server listen on
     *   server_port - which port that the server listen on
     *   client_port - which port that the client listen on
-    *   key - key to encrypt/decrypt data **16bytes**
+    *   username - username that the client uses to authenticate to the server
+    *   password - password for authentication, also used to derive the encryption key (PBKDF2-HMAC-SHA256)
+
+    Data between client and server is encrypted with AES-128-GCM
+    (random IV per message, authenticated ciphertext).
 
 5.  run `./start_server.sh` at server side, and `./start_client.sh` at client side.
 6.  Done.

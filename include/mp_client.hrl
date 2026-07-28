@@ -9,7 +9,7 @@
 -author("wang").
 
 -record(client, {
-    key :: string(),
+    key :: binary(),
     ref :: ranch:ref(),
     socket :: any(),
     transport :: module(),

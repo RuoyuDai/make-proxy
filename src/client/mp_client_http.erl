@@ -50,10 +50,8 @@ do_communication(Data,
     #http_request{host = Host, port = Port, next_data = NextData} = Req,
     #client{key = Key, socket = Socket, transport = Transport} = State) ->
 
-    case mp_client_utils:connect_to_remote() of
+    case mp_client_utils:connect_to_remote(Key, {Host, Port}) of
         {ok, Remote} ->
-            ok = gen_tcp:send(Remote, mp_crypto:encrypt(Key, term_to_binary({Host, Port}))),
-
             State1 = State#client{remote = Remote, buffer = NextData},
 
             case Req#http_request.method =:= <<"CONNECT">> of

@@ -1,30 +1,39 @@
 -module(mp_crypto).
--export([encrypt/2,
+-export([derive_key/1,
+         encrypt/2,
          decrypt/2]).
 
--define(DATALENGTH, 16).
--define(IV, <<"^de$@#56*sxdfrtg">>).
+-define(IV_LENGTH, 12).
+-define(TAG_LENGTH, 16).
+-define(KEY_LENGTH, 16).
+-define(PBKDF2_ITERATIONS, 10000).
+-define(SALT, <<"make-proxy">>).
 
--spec encrypt(nonempty_string(), binary()) -> binary().
+%% Derive a 128-bit encryption key from the configured password.
+-spec derive_key(string() | binary()) -> binary().
+derive_key(Password) when is_list(Password) ->
+    derive_key(list_to_binary(Password));
+derive_key(Password) when is_binary(Password) ->
+    crypto:pbkdf2_hmac(sha256, Password, ?SALT, ?PBKDF2_ITERATIONS, ?KEY_LENGTH).
+
+%% AES-128-GCM: random IV per message, ciphertext is authenticated.
+%% Output layout: <<IV:12, Tag:16, CipherText/binary>>
+-spec encrypt(binary(), binary()) -> binary().
 encrypt(Key, Binary) ->
-    BinaryLength = byte_size(Binary),
-    Rem = (BinaryLength + 4) rem ?DATALENGTH,
-    AdditionalLength = ?DATALENGTH - Rem,
+    IV = crypto:strong_rand_bytes(?IV_LENGTH),
+    {CipherText, Tag} = crypto:crypto_one_time_aead(
+        aes_128_gcm, Key, IV, Binary, <<>>, ?TAG_LENGTH, true),
+    <<IV/binary, Tag/binary, CipherText/binary>>.
 
-    FinalBinary = <<BinaryLength:32/integer-big, Binary/binary, 0:AdditionalLength/unit:8>>,
+-spec decrypt(binary(), binary()) -> {ok, binary()} |
+                                     {error, term()}.
+decrypt(Key, <<IV:?IV_LENGTH/binary, Tag:?TAG_LENGTH/binary, CipherText/binary>>) ->
+    case crypto:crypto_one_time_aead(aes_128_gcm, Key, IV, CipherText, <<>>, Tag, false) of
+        error ->
+            {error, decrypt_failed};
+        PlainText ->
+            {ok, PlainText}
+    end;
 
-    crypto:crypto_one_time(aes_128_cbc, Key, ?IV, FinalBinary, true).
-
-
--spec decrypt(nonempty_string(), binary()) -> {ok, binary()} |
-                                               {error, term()}.
-decrypt(Key, Binary) ->
-    Data = crypto:crypto_one_time(aes_128_cbc, Key, ?IV, Binary, false),
-    try
-        <<Length:32/integer-big, RealData:Length/binary, _Rest/binary>> = Data,
-        {ok, RealData}
-    catch
-        Error:Reason ->
-            {error, {Error, Reason}}
-    end.
-
+decrypt(_, _) ->
+    {error, invalid_data}.

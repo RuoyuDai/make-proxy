@@ -23,10 +23,8 @@ request(Data,
     Data1 = <<Buffer/binary, Data/binary>>,
     case find_target(Data1) of
         {ok, Target, Body, Response} ->
-            case mp_client_utils:connect_to_remote() of
+            case mp_client_utils:connect_to_remote(Key, Target) of
                 {ok, Remote} ->
-                    EncryptedTarget = mp_crypto:encrypt(Key, term_to_binary(Target)),
-                    ok = gen_tcp:send(Remote, EncryptedTarget),
                     case Body of
                         <<>> -> ok;
                         _ ->

@@ -59,7 +59,8 @@ start_link(Ref, Socket, Transport, Opts) ->
     {stop, Reason :: term()} | ignore).
 init([Ref, Socket, Transport, _Opts]) ->
     put(init, true),
-    {ok, Key} = application:get_env(make_proxy, key),
+    {ok, Password} = application:get_env(make_proxy, password),
+    Key = mp_crypto:derive_key(Password),
     {OK, Closed, Error} = Transport:messages(),
 
     ok = Transport:setopts(Socket, [binary, {active, once}, {packet, raw}]),
