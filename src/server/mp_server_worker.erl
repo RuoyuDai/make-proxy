@@ -27,6 +27,8 @@
     error,
     recv_from_client = false :: boolean(),
     recv_from_target = false :: boolean(),
+    up_bytes = 0 :: non_neg_integer(),
+    down_bytes = 0 :: non_neg_integer(),
     remote :: gen_tcp:socket() | undefined
 }).
 
@@ -170,7 +172,8 @@ handle_info({OK, Socket, Request},
     case gen_tcp:send(Remote, RealData) of
         ok ->
             ok = Transport:setopts(Socket, [{active, once}]),
-            {noreply, State#state{recv_from_client = true}, ?TIMEOUT};
+            {noreply, State#state{recv_from_client = true,
+                up_bytes = State#state.up_bytes + byte_size(RealData)}, ?TIMEOUT};
         {error, Error} ->
             {stop, Error, State}
     end;
@@ -189,7 +192,8 @@ handle_info({tcp, Remote, Response},
     case Transport:send(Client, mp_crypto:encrypt(Key, Response)) of
         ok ->
             ok = inet:setopts(Remote, [{active, once}]),
-            {noreply, State#state{recv_from_target = true}, ?TIMEOUT};
+            {noreply, State#state{recv_from_target = true,
+                down_bytes = State#state.down_bytes + byte_size(Response)}, ?TIMEOUT};
         {error, Error} ->
             {stop, Error, State}
     end;
@@ -226,7 +230,9 @@ handle_info(timeout, #state{peer = Peer} = State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, #state{socket = Socket, transport = Transport, remote = Remote}) ->
+terminate(_Reason, #state{socket = Socket, transport = Transport, remote = Remote,
+        peer = Peer, up_bytes = Up, down_bytes = Down}) ->
+    log("connection closed for ~p, up ~p bytes, down ~p bytes", [Peer, Up, Down]),
     case is_port(Socket) of
         true -> Transport:close(Socket);
         false -> ok
