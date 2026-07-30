@@ -18,6 +18,7 @@
     key :: binary(),
     username :: binary(),
     password :: binary(),
+    peer :: term(),
     ref :: ranch:ref(),
     socket :: any(),
     transport :: module(),
@@ -28,7 +29,7 @@
 }).
 
 
--define(TIMEOUT, 1000 * 60 * 10).
+-define(TIMEOUT, 1000 * 60 * 30).
 
 
 %%%===================================================================
@@ -63,6 +64,7 @@ start_link(Ref, Transport, Opts) ->
 %%--------------------------------------------------------------------
 init({Ref, Transport, _Opts}) ->
     {ok, Socket} = ranch:handshake(Ref),
+    Peer = peer(Transport, Socket),
     {ok, Password} = application:get_env(make_proxy, password),
     {ok, Username} = application:get_env(make_proxy, username),
     Key = mp_crypto:derive_key(Password),
@@ -70,9 +72,11 @@ init({Ref, Transport, _Opts}) ->
 
     ok = Transport:setopts(Socket, [{active, once}, {packet, 4}]),
 
+    log("new connection from ~p", [Peer]),
+
     State = #state{key = Key, username = list_to_binary(Username),
-        password = list_to_binary(Password), ref = Ref, socket = Socket,
-        transport = Transport, ok = OK, closed = Closed,
+        password = list_to_binary(Password), peer = Peer, ref = Ref,
+        socket = Socket, transport = Transport, ok = OK, closed = Closed,
         error = Error},
 
     gen_server:enter_loop(?MODULE, [], State, ?TIMEOUT).
@@ -122,24 +126,29 @@ handle_cast(_Msg, State) ->
 
 %% first message from client: authentication + target
 handle_info({OK, Socket, Request},
-    #state{key = Key, socket = Socket,
+    #state{key = Key, socket = Socket, peer = Peer,
         transport = Transport, ok = OK, remote = undefined} = State) ->
 
     case authenticate(Request, State) of
         {ok, Address, Port} ->
+            log("auth ok from ~p, target ~p:~p", [Peer, Address, Port]),
             case connect_target(Address, Port) of
                 {ok, Remote} ->
                     ok = reply(Socket, Transport, Key, ok),
                     ok = Transport:setopts(Socket, [{active, once}]),
                     {noreply, State#state{remote = Remote}, ?TIMEOUT};
                 {error, Error} ->
+                    log("failed to connect target ~p:~p for ~p: ~p",
+                        [Address, Port, Peer, Error]),
                     ok = reply(Socket, Transport, Key, {error, connect_failure}),
                     {stop, Error, State}
             end;
         {error, auth_failure} ->
+            log("auth failure from ~p", [Peer]),
             ok = reply(Socket, Transport, Key, {error, auth_failure}),
             {stop, normal, State};
         {error, Error} ->
+            log("bad first message from ~p: ~p", [Peer, Error]),
             {stop, Error, State}
     end;
 
@@ -173,19 +182,24 @@ handle_info({tcp, Remote, Response},
             {stop, Error, State}
     end;
 
-handle_info({Closed, _}, #state{closed = Closed} = State) ->
+handle_info({Closed, _}, #state{closed = Closed, peer = Peer} = State) ->
+    log("client ~p disconnected", [Peer]),
     {stop, normal, State};
 
-handle_info({Error, _, Reason}, #state{error = Error} = State) ->
+handle_info({Error, _, Reason}, #state{error = Error, peer = Peer} = State) ->
+    log("client ~p socket error: ~p", [Peer, Reason]),
     {stop, Reason, State};
 
-handle_info({tcp_closed, _}, State) ->
+handle_info({tcp_closed, _}, #state{peer = Peer} = State) ->
+    log("target socket closed for ~p", [Peer]),
     {stop, normal, State};
 
-handle_info({tcp_error, _, Reason}, State) ->
+handle_info({tcp_error, _, Reason}, #state{peer = Peer} = State) ->
+    log("target socket error for ~p: ~p", [Peer, Reason]),
     {stop, Reason, State};
 
-handle_info(timeout, State) ->
+handle_info(timeout, #state{peer = Peer} = State) ->
+    log("connection ~p idle timeout", [Peer]),
     {stop, normal, State}.
 
 
@@ -262,7 +276,21 @@ connect_target(_, _, 0) ->
 connect_target(Address, Port, RetryTimes) ->
     case gen_tcp:connect(Address, Port, [binary, {active, once}], 5000) of
         {ok, TargetSocket} ->
+            log("connected to target ~p:~p", [Address, Port]),
             {ok, TargetSocket};
         {error, _Error} ->
             connect_target(Address, Port, RetryTimes - 1)
     end.
+
+
+-spec peer(module(), term()) -> term().
+peer(Transport, Socket) ->
+    case Transport:peername(Socket) of
+        {ok, Peer} -> Peer;
+        _ -> undefined
+    end.
+
+
+-spec log(string(), list()) -> ok.
+log(Fmt, Args) ->
+    io:format("~p ~ts~n", [calendar:local_time(), io_lib:format(Fmt, Args)]).

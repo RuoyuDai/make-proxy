@@ -18,4 +18,5 @@ _build
 *.lock
 app.config
 priv/server.key
-priv/server.crt.DS_Store
+priv/server.crt
+.DS_Store
