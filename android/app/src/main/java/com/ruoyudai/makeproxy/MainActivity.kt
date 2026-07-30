@@ -36,6 +36,7 @@ class MainActivity : Activity() {
 
         statusView = findViewById(R.id.textStatus)
         toggleButton = findViewById(R.id.buttonToggle)
+        findViewById<TextView>(R.id.textVersion).text = "version: ${BuildConfig.VERSION_NAME}"
         toggleButton.setOnClickListener {
             if (ProxyService.isRunning) {
                 stopProxy()

@@ -7,6 +7,10 @@ android {
     namespace 'com.ruoyudai.makeproxy'
     compileSdk 34
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId "com.ruoyudai.makeproxy"
         minSdk 26
