@@ -20,11 +20,13 @@ class LocalProxyServer(
     private val serverPort: Int,
     private val username: String,
     private val password: String,
-    private val onError: (String) -> Unit
+    private val onError: (String) -> Unit,
+    private val onConnectionChange: (Int) -> Unit = {}
 ) {
     @Volatile
     private var running = true
     private var serverSocket: ServerSocket? = null
+    private val activeConnections = java.util.concurrent.atomic.AtomicInteger(0)
 
     fun start() {
         thread(name = "proxy-accept") {
@@ -35,7 +37,15 @@ class LocalProxyServer(
                 serverSocket = ss
                 while (running) {
                     val client = ss.accept()
-                    thread(name = "proxy-conn") { handle(client) }
+                    thread(name = "proxy-conn") {
+                        val count = activeConnections.incrementAndGet()
+                        onConnectionChange(count)
+                        try {
+                            handle(client)
+                        } finally {
+                            onConnectionChange(activeConnections.decrementAndGet())
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 if (running) onError("listener error: ${e.message}")

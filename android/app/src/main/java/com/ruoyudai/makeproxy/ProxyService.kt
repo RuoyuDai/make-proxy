@@ -44,11 +44,20 @@ class ProxyService : Service() {
             return START_NOT_STICKY
         }
 
-        startForeground(1, buildNotification())
+        startForeground(1, buildNotification("local proxy is starting"))
 
-        server = LocalProxyServer(localPort, serverAddr, serverPort, username, password) { err ->
-            status = err
-        }
+        server = LocalProxyServer(localPort, serverAddr, serverPort, username, password,
+            onError = { err -> status = err },
+            onConnectionChange = { count ->
+                status = if (count > 0) {
+                    "$count connection(s) active on 127.0.0.1:$localPort"
+                } else {
+                    "listening on 127.0.0.1:$localPort -> $serverAddr:$serverPort"
+                }
+                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                    .notify(1, buildNotification(status))
+            }
+        )
         server?.start()
         isRunning = true
         status = "listening on 127.0.0.1:$localPort -> $serverAddr:$serverPort"
@@ -63,15 +72,17 @@ class ProxyService : Service() {
         super.onDestroy()
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(contentText: String): Notification {
         val channelId = "proxy"
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(
-            NotificationChannel(channelId, "MakeProxy", NotificationManager.IMPORTANCE_LOW)
-        )
+        if (manager.getNotificationChannel(channelId) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(channelId, "MakeProxy", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
         return Notification.Builder(this, channelId)
             .setContentTitle("MakeProxy")
-            .setContentText("local proxy is running")
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .build()
     }
