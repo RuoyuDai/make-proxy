@@ -141,7 +141,7 @@ handle_info({OK, Socket, Request},
                     log("failed to connect target ~p:~p for ~p: ~p",
                         [Address, Port, Peer, Error]),
                     ok = reply(Socket, Transport, Key, {error, connect_failure}),
-                    {stop, Error, State}
+                    {stop, normal, State}
             end;
         {error, auth_failure} ->
             log("auth failure from ~p", [Peer]),
@@ -149,7 +149,7 @@ handle_info({OK, Socket, Request},
             {stop, normal, State};
         {error, Error} ->
             log("bad first message from ~p: ~p", [Peer, Error]),
-            {stop, Error, State}
+            {stop, normal, State}
     end;
 
 
