@@ -224,9 +224,9 @@ class LocalProxyServer(
                     tunnel.send(buf.copyOf(n))
                 }
             } catch (_: Exception) {
-            } finally {
-                tunnel.close()
             }
+            // Do NOT close the tunnel here: the remote may still be sending
+            // the response after the local side half-closes.
         }
         try {
             while (true) {

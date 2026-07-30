@@ -25,6 +25,8 @@
     ok,
     closed,
     error,
+    recv_from_client = false :: boolean(),
+    recv_from_target = false :: boolean(),
     remote :: gen_tcp:socket() | undefined
 }).
 
@@ -155,15 +157,20 @@ handle_info({OK, Socket, Request},
 
 %% recv from client, then send to server
 handle_info({OK, Socket, Request},
-    #state{key = Key, socket = Socket,
+    #state{key = Key, socket = Socket, peer = Peer, recv_from_client = First,
         transport = Transport, ok = OK, remote = Remote} = State) ->
 
     {ok, RealData} = mp_crypto:decrypt(Key, Request),
 
+    case First of
+        false -> log("first data from client ~p (~p bytes)", [Peer, byte_size(RealData)]);
+        true -> ok
+    end,
+
     case gen_tcp:send(Remote, RealData) of
         ok ->
             ok = Transport:setopts(Socket, [{active, once}]),
-            {noreply, State, ?TIMEOUT};
+            {noreply, State#state{recv_from_client = true}, ?TIMEOUT};
         {error, Error} ->
             {stop, Error, State}
     end;
@@ -171,13 +178,18 @@ handle_info({OK, Socket, Request},
 
 %% recv from server, and send back to client
 handle_info({tcp, Remote, Response},
-    #state{key = Key, socket = Client,
+    #state{key = Key, socket = Client, peer = Peer, recv_from_target = First,
         transport = Transport, remote = Remote} = State) ->
+
+    case First of
+        false -> log("first data from target for ~p (~p bytes)", [Peer, byte_size(Response)]);
+        true -> ok
+    end,
 
     case Transport:send(Client, mp_crypto:encrypt(Key, Response)) of
         ok ->
             ok = inet:setopts(Remote, [{active, once}]),
-            {noreply, State, ?TIMEOUT};
+            {noreply, State#state{recv_from_target = true}, ?TIMEOUT};
         {error, Error} ->
             {stop, Error, State}
     end;
