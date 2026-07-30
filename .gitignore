@@ -17,3 +17,5 @@ _build
 *.iml
 *.lock
 app.config
+priv/server.key
+priv/server.crt.DS_Store

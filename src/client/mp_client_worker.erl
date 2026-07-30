@@ -13,7 +13,7 @@
 -behaviour(ranch_protocol).
 
 %% API
--export([start_link/4]).
+-export([start_link/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -36,8 +36,8 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
-start_link(Ref, Socket, Transport, Opts) ->
-    gen_server:start_link(?MODULE, [Ref, Socket, Transport, Opts], []).
+start_link(Ref, Transport, Opts) ->
+    {ok, proc_lib:spawn_link(?MODULE, init, [{Ref, Transport, Opts}])}.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -57,11 +57,11 @@ start_link(Ref, Socket, Transport, Opts) ->
 -spec(init(Args :: term()) ->
     {ok, State :: #client{}} | {ok, State :: #client{}, timeout() | hibernate} |
     {stop, Reason :: term()} | ignore).
-init([Ref, Socket, Transport, _Opts]) ->
-    put(init, true),
+init({Ref, Transport, _Opts}) ->
+    {ok, Socket} = ranch:handshake(Ref),
     {ok, Password} = application:get_env(make_proxy, password),
     Key = mp_crypto:derive_key(Password),
-    {OK, Closed, Error} = Transport:messages(),
+    {OK, Closed, Error, _Passive} = Transport:messages(),
 
     ok = Transport:setopts(Socket, [binary, {active, once}, {packet, raw}]),
 
@@ -69,7 +69,7 @@ init([Ref, Socket, Transport, _Opts]) ->
         transport = Transport, ok = OK, closed = Closed,
         error = Error, buffer = <<>>, keep_alive = false},
 
-    {ok, State, 0}.
+    gen_server:enter_loop(?MODULE, [], State).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -145,12 +145,18 @@ handle_info({OK, Socket, Data},
             {stop, Reason, State}
     end;
 
-handle_info({tcp, Remote, Data},
+handle_info({ssl, Remote, Data},
     #client{key = Key, socket = Socket, transport = Transport, remote = Remote} = State) ->
     {ok, RealData} = mp_crypto:decrypt(Key, Data),
     ok = Transport:send(Socket, RealData),
-    ok = inet:setopts(Remote, [{active, once}]),
+    ok = ssl:setopts(Remote, [{active, once}]),
     {noreply, State};
+
+handle_info({ssl_closed, Remote}, #client{remote = Remote} = State) ->
+    {stop, normal, State};
+
+handle_info({ssl_error, Remote, Reason}, #client{remote = Remote} = State) ->
+    {stop, Reason, State};
 
 handle_info({Closed, _}, #client{closed = Closed} = State) ->
     {stop, normal, State};
@@ -162,19 +168,7 @@ handle_info({tcp_closed, _}, State) ->
     {stop, normal, State};
 
 handle_info({tcp_error, _, Reason}, State) ->
-    {stop, Reason, State};
-
-handle_info(timeout, #client{ref = Ref} = State) ->
-    case get(init) of
-        true ->
-            % init
-            ok = ranch:accept_ack(Ref),
-            erase(init),
-            {noreply, State};
-        undefined ->
-            % timeout
-            {stop, normal, State}
-    end.
+    {stop, Reason, State}.
 
 
 %%--------------------------------------------------------------------
@@ -196,9 +190,9 @@ terminate(_Reason, #client{socket = Socket, transport = Transport, remote = Remo
         false -> ok
     end,
 
-    case is_port(Remote) of
-        true -> gen_tcp:close(Remote);
-        false -> ok
+    case Remote of
+        undefined -> ok;
+        _ -> ssl:close(Remote)
     end.
 
 %%--------------------------------------------------------------------

@@ -17,12 +17,20 @@ start_server() ->
     {ok, _} = application:ensure_all_started(make_proxy),
     {ok, Port} = application:get_env(make_proxy, server_port),
 
-    TransOpts = transport_opts(Port),
+    PrivDir = code:priv_dir(make_proxy),
+    TransOpts = #{
+        socket_opts => [
+            {port, Port},
+            {certfile, filename:join(PrivDir, "server.crt")},
+            {keyfile, filename:join(PrivDir, "server.key")}
+        ],
+        num_acceptors => 20,
+        max_connections => infinity
+    },
 
     {ok, _} = ranch:start_listener(
         make_proxy_server,
-        20,
-        ranch_tcp,
+        ranch_ssl,
         TransOpts,
         mp_server_worker, []
     ).
@@ -31,15 +39,15 @@ start_client() ->
     {ok, _} = application:ensure_all_started(make_proxy),
     {ok, Port} = application:get_env(make_proxy, client_port),
 
-    TransOpts = transport_opts(Port),
+    TransOpts = #{
+        socket_opts => [{port, Port}],
+        num_acceptors => 20,
+        max_connections => infinity
+    },
 
     {ok, _} = ranch:start_listener(
         make_proxy_client,
-        20,
         ranch_tcp,
         TransOpts,
         mp_client_worker, []
     ).
-
-transport_opts(Port) ->
-    [{port, Port}, {max_connections, infinity}].

@@ -4,7 +4,7 @@
 -behaviour(ranch_protocol).
 
 %% API
--export([start_link/4]).
+-export([start_link/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -42,8 +42,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Ref, Socket, Transport, Opts) ->
-    gen_server:start_link(?MODULE, [Ref, Socket, Transport, Opts], []).
+start_link(Ref, Transport, Opts) ->
+    {ok, proc_lib:spawn_link(?MODULE, init, [{Ref, Transport, Opts}])}.
 
 
 %%%===================================================================
@@ -61,12 +61,12 @@ start_link(Ref, Socket, Transport, Opts) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([Ref, Socket, Transport, _Opts]) ->
-    put(init, true),
+init({Ref, Transport, _Opts}) ->
+    {ok, Socket} = ranch:handshake(Ref),
     {ok, Password} = application:get_env(make_proxy, password),
     {ok, Username} = application:get_env(make_proxy, username),
     Key = mp_crypto:derive_key(Password),
-    {OK, Closed, Error} = Transport:messages(),
+    {OK, Closed, Error, _Passive} = Transport:messages(),
 
     ok = Transport:setopts(Socket, [{active, once}, {packet, 4}]),
 
@@ -75,7 +75,7 @@ init([Ref, Socket, Transport, _Opts]) ->
         transport = Transport, ok = OK, closed = Closed,
         error = Error},
 
-    {ok, State, 0}.
+    gen_server:enter_loop(?MODULE, [], State, ?TIMEOUT).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -185,17 +185,8 @@ handle_info({tcp_closed, _}, State) ->
 handle_info({tcp_error, _, Reason}, State) ->
     {stop, Reason, State};
 
-handle_info(timeout, #state{ref = Ref} = State) ->
-    case get(init) of
-        true ->
-            % init
-            ok = ranch:accept_ack(Ref),
-            erase(init),
-            {noreply, State};
-        undefined ->
-            % timeout
-            {stop, normal, State}
-    end.
+handle_info(timeout, State) ->
+    {stop, normal, State}.
 
 
 %%--------------------------------------------------------------------
@@ -242,6 +233,8 @@ authenticate(Data, #state{key = Key, username = Username, password = Password}) 
     case mp_crypto:decrypt(Key, Data) of
         {ok, RealData} ->
             case binary_to_term(RealData, [safe]) of
+                {auth, Username, Password, {Address, Port}} when is_binary(Address) ->
+                    {ok, binary_to_list(Address), Port};
                 {auth, Username, Password, {Address, Port}} ->
                     {ok, Address, Port};
                 {auth, _, _, _} ->

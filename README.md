@@ -41,16 +41,27 @@ with the great erlang, the project has the following features:
     *   server_port - which port that the server listen on
     *   client_port - which port that the client listen on
     *   username - username that the client uses to authenticate to the server
-    *   password - password for authentication, also used to derive the encryption key (PBKDF2-HMAC-SHA256)
+    *   password - password for authentication, also used to derive the encryption key (PBKDF2-HMAC-SHA256). **Use a long random password** - its strength directly determines the encryption strength.
 
-    Data between client and server is encrypted with AES-128-GCM
-    (random IV per message, authenticated ciphertext).
+5.  run `./gen_cert.sh` to generate a self-signed TLS certificate
+    (`priv/server.crt` / `priv/server.key`).
+6.  run `./start_server.sh` at server side, and `./start_client.sh` at client side.
+7.  Done.
 
-5.  run `./start_server.sh` at server side, and `./start_client.sh` at client side.
-6.  Done.
+## Security
+
+The client <-> server tunnel is protected by two layers:
+
+*   **TLS** - the whole connection runs inside a TLS session
+    (self-signed certificate, `verify_none` on the client). This makes
+    the traffic look like ordinary HTTPS.
+*   **AES-128-GCM** - every message inside the TLS tunnel is encrypted
+    with AES-128-GCM (random IV per message, authenticated ciphertext).
+    The key is derived from `password` with PBKDF2-HMAC-SHA256
+    (10000 iterations). The first message authenticates the client with
+    `username` / `password`; the server rejects unknown clients.
 
 ## TODO
 
 1.  Support Socks5 Username/Password Authorize
-2.  Client & Server using ssl connection
-3.  Traffic Statistics
+2.  Traffic Statistics

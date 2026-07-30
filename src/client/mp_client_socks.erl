@@ -28,7 +28,7 @@ request(Data,
                     case Body of
                         <<>> -> ok;
                         _ ->
-                            ok = gen_tcp:send(Remote, mp_crypto:encrypt(Key, Body))
+                            ok = ssl:send(Remote, mp_crypto:encrypt(Key, Body))
                     end,
                     ok = Transport:send(Socket, Response),
                     {ok, State#client{remote = Remote}};
@@ -49,7 +49,7 @@ request(Data,
     end;
 
 request(Data, #client{key = Key, remote = Remote} = State) ->
-    ok = gen_tcp:send(Remote, mp_crypto:encrypt(Key, Data)),
+    ok = ssl:send(Remote, mp_crypto:encrypt(Key, Data)),
     {ok, State}.
 
 

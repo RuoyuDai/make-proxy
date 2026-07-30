@@ -4,6 +4,6 @@
         {server_port, 7071},
         {client_port, 7070},
         {username, "admin"},
-        {password, "1234567890abcdef"}
+        {password, "CHANGE-ME-to-a-long-random-password"}
     ]}
 ].

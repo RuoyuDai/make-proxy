@@ -36,11 +36,11 @@ request(Data, #client{remote = undefined, buffer = Buffer} = State) ->
     end;
 
 request(Data, #client{remote = Remote, keep_alive = false} = State) ->
-    gen_tcp:close(Remote),
+    ssl:close(Remote),
     request(Data, State#client{remote = undefined});
 
 request(Data, #client{key = Key, remote = Remote, keep_alive = true} = State) ->
-    ok = gen_tcp:send(Remote, mp_crypto:encrypt(Key, Data)),
+    ok = ssl:send(Remote, mp_crypto:encrypt(Key, Data)),
     {ok, State}.
 
 -spec do_communication(binary(), #http_request{}, #client{}) ->
@@ -60,7 +60,7 @@ do_communication(Data,
                     {ok, State1#client{keep_alive = true}};
                 false ->
                     ThisData = binary:part(Data, 0, byte_size(Data) - byte_size(NextData)),
-                    ok = gen_tcp:send(Remote, mp_crypto:encrypt(Key, ThisData)),
+                    ok = ssl:send(Remote, mp_crypto:encrypt(Key, ThisData)),
                     {ok, State1}
             end;
         {error, Reason} ->

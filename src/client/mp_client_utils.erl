@@ -14,11 +14,17 @@
 
 -define(CONNECT_TIMEOUT, 5000).
 
-%% Connect to the proxy server and authenticate with username/password.
-%% The first encrypted message is {auth, Username, Password, Target},
-%% the server replies with an encrypted `ok' or `{error, Reason}' term.
+%% Connect to the proxy server over TLS and authenticate with
+%% username/password. The first encrypted message is
+%% {auth, Username, Password, Target}, the server replies with an
+%% encrypted `ok' or `{error, Reason}' term.
+%%
+%% The TLS certificate is not verified (verify_none): the server uses a
+%% self-signed certificate, and TLS here is for traffic camouflage.
+%% Confidentiality and peer authentication are guaranteed by the
+%% application-layer AES-GCM encryption and username/password auth.
 -spec connect_to_remote(binary(), {inet:ip_address() | nonempty_string(), inet:port_number()}) ->
-    {ok, inet:socket()} | {error, term()}.
+    {ok, ssl:sslsocket()} | {error, term()}.
 connect_to_remote(Key, Target) ->
     {ok, RemoteAddr} = application:get_env(make_proxy, server_addr),
     {ok, RemotePort} = application:get_env(make_proxy, server_port),
@@ -26,37 +32,37 @@ connect_to_remote(Key, Target) ->
     {ok, Password} = application:get_env(make_proxy, password),
     {ok, Addr} = inet:getaddr(RemoteAddr, inet),
 
-    case gen_tcp:connect(Addr, RemotePort,
-        [binary, {active, false}, {packet, 4}], ?CONNECT_TIMEOUT) of
+    SslOpts = [binary, {active, false}, {packet, 4}, {verify, verify_none}],
+    case ssl:connect(Addr, RemotePort, SslOpts, ?CONNECT_TIMEOUT) of
         {ok, Socket} ->
             Auth = term_to_binary({auth,
                 list_to_binary(Username), list_to_binary(Password), Target}),
-            ok = gen_tcp:send(Socket, mp_crypto:encrypt(Key, Auth)),
+            ok = ssl:send(Socket, mp_crypto:encrypt(Key, Auth)),
             wait_auth_reply(Key, Socket);
         {error, Reason} ->
             {error, Reason}
     end.
 
--spec wait_auth_reply(binary(), inet:socket()) ->
-    {ok, inet:socket()} | {error, term()}.
+-spec wait_auth_reply(binary(), ssl:sslsocket()) ->
+    {ok, ssl:sslsocket()} | {error, term()}.
 wait_auth_reply(Key, Socket) ->
-    case gen_tcp:recv(Socket, 0, ?CONNECT_TIMEOUT) of
+    case ssl:recv(Socket, 0, ?CONNECT_TIMEOUT) of
         {ok, Reply} ->
             case mp_crypto:decrypt(Key, Reply) of
                 {ok, Data} ->
                     case binary_to_term(Data, [safe]) of
                         ok ->
-                            ok = inet:setopts(Socket, [{active, once}]),
+                            ok = ssl:setopts(Socket, [{active, once}]),
                             {ok, Socket};
                         {error, Reason} ->
-                            gen_tcp:close(Socket),
+                            ssl:close(Socket),
                             {error, Reason}
                     end;
                 {error, Reason} ->
-                    gen_tcp:close(Socket),
+                    ssl:close(Socket),
                     {error, Reason}
             end;
         {error, Reason} ->
-            gen_tcp:close(Socket),
+            ssl:close(Socket),
             {error, Reason}
     end.

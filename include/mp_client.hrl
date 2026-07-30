@@ -16,7 +16,7 @@
     ok,
     closed,
     error,
-    remote :: port() | undefined,
+    remote :: ssl:sslsocket() | undefined,
     protocol :: module() | undefined,
     buffer :: binary(),
     keep_alive = flase :: boolean()
