@@ -3,6 +3,21 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// Auto version: yyyy.MM.dd.N where N is the Nth build of the day.
+def versionFile = file('version.properties')
+def versionProps = new Properties()
+if (versionFile.exists()) {
+    versionFile.withInputStream { versionProps.load(it) }
+}
+def today = new Date().format('yyyy.MM.dd')
+def buildCount = (versionProps.getProperty('date') == today) ?
+        (versionProps.getProperty('count', '0') as int) + 1 : 1
+versionProps.setProperty('date', today)
+versionProps.setProperty('count', buildCount.toString())
+versionFile.withOutputStream { versionProps.store(it, null) }
+def autoVersionName = "${today}.${buildCount}"
+def autoVersionCode = (today.replace('.', '') as int) * 100 + buildCount
+
 android {
     namespace 'com.ruoyudai.makeproxy'
     compileSdk 34
@@ -15,8 +30,8 @@ android {
         applicationId "com.ruoyudai.makeproxy"
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode autoVersionCode
+        versionName autoVersionName
     }
 
     compileOptions {
