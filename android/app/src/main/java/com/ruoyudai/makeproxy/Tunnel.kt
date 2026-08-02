@@ -31,7 +31,7 @@ class Tunnel(
     password: String,
     targetHost: String,
     targetPort: Int
-) {
+) : ProxyTunnel {
     private val key: ByteArray = MpCrypto.deriveKey(password)
     private val socket: SSLSocket
     private val input: InputStream
@@ -59,16 +59,16 @@ class Tunnel(
 
     /** Encrypt and send one message to the proxy server. */
     @Synchronized
-    fun send(plain: ByteArray) {
+    override fun send(plain: ByteArray) {
         writeFrame(output, MpCrypto.encrypt(key, plain))
     }
 
     /** Receive and decrypt one message from the proxy server. */
-    fun recv(): ByteArray {
+    override fun recv(): ByteArray {
         return MpCrypto.decrypt(key, readFrame(input))
     }
 
-    fun close() {
+    override fun close() {
         try {
             socket.close()
         } catch (_: Exception) {

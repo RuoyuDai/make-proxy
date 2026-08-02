@@ -61,8 +61,25 @@ class LocalProxyServer(
         }
     }
 
-    private fun openTunnel(host: String, port: Int): Tunnel {
+    private fun openTunnel(host: String, port: Int): ProxyTunnel {
+        // Private/LAN addresses are reachable directly from the phone,
+        // sending them to the remote server would always fail.
+        if (isPrivateAddress(host)) {
+            return DirectTunnel(host, port)
+        }
         return Tunnel(serverAddr, serverPort, username, password, host, port)
+    }
+
+    private fun isPrivateAddress(host: String): Boolean {
+        val parts = host.split(".")
+        if (parts.size != 4) return false
+        val nums = parts.map { it.toIntOrNull() ?: return false }
+        val a = nums[0]
+        val b = nums[1]
+        return a == 10 || a == 127 ||
+            (a == 172 && b in 16..31) ||
+            (a == 192 && b == 168) ||
+            (a == 169 && b == 254)
     }
 
     private fun handle(client: Socket) {
@@ -217,7 +234,7 @@ class LocalProxyServer(
     // ---------------- relay ----------------
 
     /** Pipe local socket <-> tunnel in both directions until either side closes. */
-    private fun relay(client: Socket, tunnel: Tunnel, tag: String) {
+    private fun relay(client: Socket, tunnel: ProxyTunnel, tag: String) {
         DiagLog.add("OPEN $tag")
         val upBytes = java.util.concurrent.atomic.AtomicLong(0)
         val downBytes = java.util.concurrent.atomic.AtomicLong(0)
