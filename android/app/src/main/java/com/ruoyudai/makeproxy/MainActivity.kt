@@ -23,6 +23,11 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun refreshLog() {
+        findViewById<TextView>(R.id.textLog).text =
+            DiagLog.snapshot().take(20).joinToString("\n")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -52,11 +57,14 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         handler.post(statusPoller)
+        refreshLog()
+        DiagLog.listener = { runOnUiThread { refreshLog() } }
     }
 
     override fun onPause() {
         super.onPause()
         handler.removeCallbacks(statusPoller)
+        DiagLog.listener = null
     }
 
     private fun bindEdit(id: Int, value: String?) {

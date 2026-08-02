@@ -135,6 +135,7 @@ class LocalProxyServer(
         val tunnel = try {
             openTunnel(host, port)
         } catch (e: Exception) {
+            DiagLog.add("FAIL $host:$port ${e.message}")
             output.write(byteArrayOf(0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
             output.flush()
             throw e
@@ -142,7 +143,7 @@ class LocalProxyServer(
         output.write(byteArrayOf(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0))
         output.flush()
 
-        relay(client, tunnel)
+        relay(client, tunnel, "$host:$port")
     }
 
     // ---------------- HTTP proxy ----------------
@@ -164,13 +165,14 @@ class LocalProxyServer(
             val tunnel = try {
                 openTunnel(host, port)
             } catch (e: Exception) {
+                DiagLog.add("FAIL $host:$port ${e.message}")
                 output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
                 output.flush()
                 throw e
             }
             output.write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
             output.flush()
-            relay(client, tunnel)
+            relay(client, tunnel, authority)
         } else {
             // plain HTTP: rewrite absolute URI to origin-form and forward
             val uri = parts[1]
@@ -182,13 +184,14 @@ class LocalProxyServer(
             val tunnel = try {
                 openTunnel(host, port)
             } catch (e: Exception) {
+                DiagLog.add("FAIL $host:$port ${e.message}")
                 output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray(Charsets.ISO_8859_1))
                 output.flush()
                 throw e
             }
             val rewritten = headerText.replaceFirst(requestLine, "${parts[0]} $path ${parts[2]}")
             tunnel.send(rewritten.toByteArray(Charsets.ISO_8859_1))
-            relay(client, tunnel)
+            relay(client, tunnel, hostPort)
         }
     }
 
@@ -214,7 +217,11 @@ class LocalProxyServer(
     // ---------------- relay ----------------
 
     /** Pipe local socket <-> tunnel in both directions until either side closes. */
-    private fun relay(client: Socket, tunnel: Tunnel) {
+    private fun relay(client: Socket, tunnel: Tunnel, tag: String) {
+        DiagLog.add("OPEN $tag")
+        val upBytes = java.util.concurrent.atomic.AtomicLong(0)
+        val downBytes = java.util.concurrent.atomic.AtomicLong(0)
+        val upError = java.util.concurrent.atomic.AtomicReference<String?>(null)
         val toRemote = thread(name = "relay-up") {
             try {
                 val buf = ByteArray(16 * 1024)
@@ -222,19 +229,24 @@ class LocalProxyServer(
                     val n = client.getInputStream().read(buf)
                     if (n < 0) break
                     tunnel.send(buf.copyOf(n))
+                    upBytes.addAndGet(n.toLong())
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                upError.set(e.message ?: e.javaClass.simpleName)
             }
             // Do NOT close the tunnel here: the remote may still be sending
             // the response after the local side half-closes.
         }
+        var downReason = "target closed"
         try {
             while (true) {
                 val data = tunnel.recv()
                 client.getOutputStream().write(data)
                 client.getOutputStream().flush()
+                downBytes.addAndGet(data.size.toLong())
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            downReason = e.message ?: e.javaClass.simpleName
         } finally {
             tunnel.close()
             try {
@@ -243,5 +255,7 @@ class LocalProxyServer(
             }
         }
         toRemote.join(5000)
+        val upInfo = upError.get()?.let { ", up-err=$it" } ?: ""
+        DiagLog.add("CLOSE $tag up=${upBytes.get()} down=${downBytes.get()} ($downReason$upInfo)")
     }
 }
