@@ -138,18 +138,18 @@ handle_info({OK, Socket, Request},
             log("auth ok from ~p, target ~p:~p", [Peer, Address, Port]),
             case connect_target(Address, Port) of
                 {ok, Remote} ->
-                    ok = reply(Socket, Transport, Key, ok),
+                    _ = reply(Socket, Transport, Key, ok),
                     ok = Transport:setopts(Socket, [{active, once}]),
                     {noreply, State#state{remote = Remote}, ?TIMEOUT};
                 {error, Error} ->
                     log("failed to connect target ~p:~p for ~p: ~p",
                         [Address, Port, Peer, Error]),
-                    ok = reply(Socket, Transport, Key, {error, connect_failure}),
+                    _ = reply(Socket, Transport, Key, {error, connect_failure}),
                     {stop, normal, State}
             end;
         {error, auth_failure} ->
             log("auth failure from ~p", [Peer]),
-            ok = reply(Socket, Transport, Key, {error, auth_failure}),
+            _ = reply(Socket, Transport, Key, {error, auth_failure}),
             {stop, normal, State};
         {error, Error} ->
             log("bad first message from ~p: ~p", [Peer, Error]),

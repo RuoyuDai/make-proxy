@@ -47,7 +47,7 @@ connect_to_remote(Key, Target) ->
 -spec wait_auth_reply(binary(), ssl:sslsocket()) ->
     {ok, ssl:sslsocket()} | {error, term()}.
 wait_auth_reply(Key, Socket) ->
-    case ssl:recv(Socket, 0, ?CONNECT_TIMEOUT) of
+    case ssl:recv(Socket, 0, 15000) of
         {ok, Reply} ->
             case mp_crypto:decrypt(Key, Reply) of
                 {ok, Data} ->
