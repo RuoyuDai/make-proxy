@@ -292,7 +292,7 @@ connect_target(_, _, 0) ->
     {error, connect_failure};
 
 connect_target(Address, Port, RetryTimes) ->
-    case gen_tcp:connect(Address, Port, [binary, {active, once}], 5000) of
+    case gen_tcp:connect(Address, Port, [binary, {active, once}, {keepalive, true}], 5000) of
         {ok, TargetSocket} ->
             log("connected to target ~p:~p", [Address, Port]),
             {ok, TargetSocket};

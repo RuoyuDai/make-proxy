@@ -39,6 +39,7 @@ class Tunnel(
 
     init {
         socket = trustAllFactory().createSocket() as SSLSocket
+        socket.keepAlive = true
         socket.connect(InetSocketAddress(serverAddr, serverPort), 10000)
         socket.startHandshake()
         input = socket.inputStream

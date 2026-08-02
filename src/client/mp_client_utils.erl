@@ -32,7 +32,8 @@ connect_to_remote(Key, Target) ->
     {ok, Password} = application:get_env(make_proxy, password),
     {ok, Addr} = inet:getaddr(RemoteAddr, inet),
 
-    SslOpts = [binary, {active, false}, {packet, 4}, {verify, verify_none}],
+    SslOpts = [binary, {active, false}, {packet, 4}, {keepalive, true},
+        {verify, verify_none}],
     case ssl:connect(Addr, RemotePort, SslOpts, ?CONNECT_TIMEOUT) of
         {ok, Socket} ->
             Auth = term_to_binary({auth,

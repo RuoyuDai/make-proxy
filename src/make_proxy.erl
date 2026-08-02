@@ -21,6 +21,7 @@ start_server() ->
     TransOpts = #{
         socket_opts => [
             {port, Port},
+            {keepalive, true},
             {certfile, filename:join(PrivDir, "server.crt")},
             {keyfile, filename:join(PrivDir, "server.key")}
         ],
