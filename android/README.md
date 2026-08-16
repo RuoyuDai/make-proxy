@@ -1,9 +1,31 @@
 # MakeProxy Android Client
 
-Android client for the make-proxy server. It runs a local proxy on
-`127.0.0.1:<local port>` (default 7070) that auto-detects SOCKS5 and
-HTTP (CONNECT + plain HTTP), and forwards traffic to the Erlang server
-over the TLS + AES-128-GCM tunnel with username/password authentication.
+Android client for the make-proxy server. Two layers:
+
+- **VpnService (global mode)**: captures all device traffic on a TUN
+  interface. TCP goes through the tunnel, DNS is answered with
+  DNS-over-TCP relayed through the tunnel, other UDP (QUIC) is dropped
+  so apps fall back to TCP. Works on Wi-Fi **and cellular**, for every
+  app (browser, YouTube, Telegram, ...).
+- **Local SOCKS5/HTTP proxy** (`LocalProxyServer`, on `127.0.0.1:<local
+  port>`): the tunnel endpoint used by the VPN engine; can also be used
+  directly by apps that support proxy settings.
+
+The tunnel itself is unchanged: TLS + AES-128-GCM + username/password
+authentication to the Erlang make-proxy server.
+
+## Architecture
+
+```
+apps -> VpnService TUN -> tun2proxy (Go/gvisor, tun2proxy.aar)
+      -> SOCKS5 127.0.0.1:7070 (LocalProxyServer)
+      -> TLS + AES-GCM + auth -> make-proxy server -> target
+```
+
+`gopkg/tun2proxy/` contains the Go engine: a gVisor userspace TCP/IP
+stack that forwards TCP via SOCKS5 and answers DNS over TCP through the
+tunnel. It is packaged with gomobile into
+`android/app/libs/tun2proxy.aar`.
 
 ## Build
 
@@ -16,34 +38,36 @@ export ANDROID_HOME=/path/to/android-sdk
 # APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Install on a phone (USB debugging on):
+Rebuilding the Go engine (only needed after changing
+`gopkg/tun2proxy/`):
 
 ```
-adb install app/build/outputs/apk/debug/app-debug.apk
+cd gopkg/tun2proxy
+export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125
+gomobile bind -target=android -androidapi 21 -o tun2proxy.aar .
+cp tun2proxy.aar ../../android/app/libs/
 ```
 
 ## Usage
 
 1. Open the app, fill in server address/port, username, password
-   (same values as the server's `app.config`), and the local port.
-2. Tap **Start**. The proxy runs as a foreground service.
-3. Set the phone's Wi-Fi proxy (Wi-Fi settings -> network -> advanced
-   -> proxy -> manual) to host `127.0.0.1`, port `7070`.
-4. HTTPS traffic (HTTP CONNECT) and plain HTTP are proxied. SOCKS5
-   clients can also use `127.0.0.1:7070` directly.
+   (same values as the server's `app.config`).
+2. Tap **Start** and confirm the system VPN prompt (once).
+3. All traffic now goes through the tunnel. Tap **Stop** to disconnect.
 
-Limitations:
+The main screen shows live connection diagnostics (OPEN/CLOSE with byte
+counts and close reasons).
 
-- Apps that ignore the Android system proxy setting will not be
-  tunneled (this is not a VpnService-based app).
-- The TLS certificate is self-signed and not verified by the client;
-  traffic confidentiality and server authentication are provided by the
+## Notes
+
+- IPv6 is dropped by the engine; apps fall back to IPv4 (Happy
+  Eyeballs).
+- Android "Private DNS" (DoT, port 853) works: it is forwarded through
+  the tunnel to the real resolver, so certificate validation is
+  unaffected.
+- Local/LAN addresses (10.x, 172.16-31.x, 192.168.x, 169.254.x) bypass
+  the tunnel and connect directly.
+- The TLS certificate of the make-proxy server is self-signed and not
+  verified; confidentiality and peer authentication come from the
   application-layer AES-GCM + password handshake. Use a long random
   ASCII password.
-
-## Protocol interop test (JVM)
-
-`app/src/testInterop/TestClient.kt` exercises the exact protocol code
-used by the app against a live Erlang server. Compile it together with
-the app's `MpCrypto` / `Etf` / `Tunnel` sources and run it against a
-make_proxy server with a TCP echo server as target.

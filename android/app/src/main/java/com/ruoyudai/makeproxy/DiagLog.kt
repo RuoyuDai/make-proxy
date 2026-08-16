@@ -15,6 +15,7 @@ object DiagLog {
     var listener: (() -> Unit)? = null
 
     fun add(msg: String) {
+        android.util.Log.d("MakeProxy", msg)
         entries.addFirst("${timeFormat.format(Date())} $msg")
         while (entries.size > MAX_ENTRIES) {
             entries.removeLast()

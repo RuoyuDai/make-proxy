@@ -43,3 +43,7 @@ android {
         jvmTarget = '17'
     }
 }
+
+dependencies {
+    implementation files('libs/tun2proxy.aar')
+}

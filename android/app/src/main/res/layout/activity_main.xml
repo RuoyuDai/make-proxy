@@ -113,7 +113,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Usage: start the proxy, then set the Wi-Fi proxy of this phone to 127.0.0.1 with the local port above (HTTP and SOCKS5 are both supported on that port). Note: apps that ignore the system proxy settings will not be tunneled."
+            android:text="Usage: tap Start and confirm the VPN prompt. All apps (browser, YouTube, Telegram...) are tunneled through the make-proxy server, on both Wi-Fi and cellular. DNS is resolved on the server side; UDP/QUIC is dropped so apps fall back to TCP."
             android:textSize="13sp" />
     </LinearLayout>
 </ScrollView>
