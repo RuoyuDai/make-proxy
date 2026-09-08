@@ -62,12 +62,26 @@ class LocalProxyServer(
     }
 
     private fun openTunnel(host: String, port: Int): ProxyTunnel {
+        // Target overrides: some Telegram DC edge nodes go offline for hours
+        // and the app keeps retrying the dead one; rewrite them to a healthy
+        // edge of the same DC.
+        val target = TARGET_OVERRIDES[host]
+        if (target != null) {
+            DiagLog.add("REWRITE $host -> $target")
+            return openTunnel(target, port)
+        }
         // Private/LAN addresses are reachable directly from the phone,
         // sending them to the remote server would always fail.
         if (isPrivateAddress(host)) {
             return DirectTunnel(host, port)
         }
         return Tunnel(serverAddr, serverPort, username, password, host, port)
+    }
+
+    companion object {
+        private val TARGET_OVERRIDES = mapOf(
+            "91.108.56.148" to "91.108.56.130"
+        )
     }
 
     private fun isPrivateAddress(host: String): Boolean {

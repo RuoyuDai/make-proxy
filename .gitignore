@@ -20,3 +20,4 @@ app.config
 priv/server.key
 priv/server.crt
 .DS_Store
+tools/
